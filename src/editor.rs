@@ -1,17 +1,18 @@
-use std::io::{self, Write};
+use crate::terminal::Terminal;
 use termion::event::Key;
-use termion::input::TermRead;
-use termion::raw::IntoRawMode;
+use std::io::{self};
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub struct Editor {
-  should_quit: bool
+  should_quit: bool,
+  terminal: Terminal
 }
 
 impl Editor {
     // if not return type, then no arrow.
     // If not self ref passing, then its associated function.
     pub fn run(&mut self) {
-        let _raw_mode_binder = io::stdout().into_raw_mode().unwrap();
         loop {
           if let Err(err) = self.refresh_screen() {
             die(err);
@@ -26,7 +27,7 @@ impl Editor {
     }
 
     fn process_keys(&mut self) -> Result<(), std::io::Error> {
-        let pressed_key = read_key()?;
+        let pressed_key = Terminal::read_key()?;
         // match pressed_key {
         //   Key::Ctrl('q') => panic!("Program end"),
         //   _ => (),
@@ -39,38 +40,55 @@ impl Editor {
     }
 
     fn refresh_screen(&self) -> Result<(), std::io::Error>{
-      print!("{}{}", termion::clear::All, termion::cursor::Goto(1, 1));
+      Terminal::hide_cursor();
+      Terminal::go_to(0, 0);
       if self.should_quit {
+        Terminal::clear();
         println!("Goodbye \r");
       } else {
         self.draw_pipe_rows();
-        print!("{}", termion::cursor::Goto(1, 1));
+        Terminal::go_to(0, 0);
       }
-      io::stdout().flush()
+      Terminal::show_cursor();
+      // io::stdout().flush()
+      Terminal::flush()
     }
 
     fn draw_pipe_rows(&self) {
-      for _ in 0..24 {
-        println!("|>\r");
+      let height = self.terminal.get_size().height; 
+      for row in 0..height - 1 {
+        Terminal::clear_current_line();
+        if row == height / 3 {
+          self.render_welcome_msg();
+        } else {
+          println!("|>\r");
+        }
       }
     }
 
+    fn render_welcome_msg(&self) {
+      let mut welcome_msg = format!("PAPYRUST v{}\r", VERSION);
+      let window_width: usize = self.terminal.get_size().width as usize;
+      let padding = window_width / 2 - welcome_msg.len() / 2;
+      let spaces = " ".repeat(padding - 1);
+      welcome_msg = format!("|>{}{}", spaces, welcome_msg);
+      let max_width = std::cmp::min(self.terminal.get_size().width as usize, welcome_msg.len()); 
+      
+      println!("{}\r", &welcome_msg[..max_width]);
+    }
+
+
     // Static functions, they don't work with an existing editor instance
     pub fn default() -> Self {
-        Editor {should_quit: false}
-    }
-}
-
-fn read_key() -> Result<Key, std::io::Error> {
-    loop {
-        // Returns an Result, inside an option
-        if let Some(key) = io::stdin().lock().keys().next() {
-            return key;
+        Editor {
+          should_quit: false,
+          terminal: Terminal::default().expect("Failed to start terminal")
         }
     }
 }
 
+
 fn die(err: io::Error) {
-  print!("{}", termion::clear::All);
+  Terminal::clear();
   panic!(err)
 }
