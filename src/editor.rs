@@ -1,9 +1,13 @@
 use crate::terminal::Terminal;
+use crate::Document;
+use crate::Row;
 use termion::event::Key;
 use std::io::{self};
+use std::env;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+#[derive(Default)]
 pub struct Position {
   pub x: usize,
   pub y: usize
@@ -12,7 +16,8 @@ pub struct Position {
 pub struct Editor {
   should_quit: bool,
   terminal: Terminal,
-  position: Position
+  position: Position, // cursor position
+  document: Document
 }
 
 impl Editor {
@@ -73,7 +78,7 @@ impl Editor {
 
     fn refresh_screen(&self) -> Result<(), std::io::Error>{
       Terminal::hide_cursor();
-      Terminal::go_to(&Position{x: 0, y: 0});
+      Terminal::go_to(&Position::default());
       if self.should_quit {
         Terminal::clear();
         println!("Goodbye \r");
@@ -88,14 +93,23 @@ impl Editor {
 
     fn draw_pipe_rows(&self) {
       let height = self.terminal.get_size().height; 
-      for row in 0..height - 1 {
+      for terminal_row in 0..height - 1 {
         Terminal::clear_current_line();
-        if row == height / 3 {
+        if let Some(row) = self.document.get_row(terminal_row as usize) {
+          self.draw_row(row);
+        } else if self.document.is_empty() && terminal_row == height / 3 {
           self.render_welcome_msg();
         } else {
           println!("|>\r");
         }
       }
+    }
+
+    fn draw_row(&self, row: &Row) {
+      let start = 0;
+      let end = self.terminal.get_size().width as usize;
+      let row = row.render(start, end);
+      println!("{}\r", row);
     }
 
     fn render_welcome_msg(&self) {
@@ -112,11 +126,20 @@ impl Editor {
 
     // Static functions, they don't work with an existing editor instance
     pub fn default() -> Self {
-        Editor {
-          should_quit: false,
-          terminal: Terminal::default().expect("Failed to start terminal"),
-          position: Position{x: 0, y: 0}
-        }
+      let args: Vec<String> = env::args().collect();
+      let document = if args.len() > 1 {
+        let filename = &args[1];
+        Document::open(filename).unwrap_or_default()
+      } else {
+        Document::default()
+      };
+
+      Editor {
+        should_quit: false,
+        terminal: Terminal::default().expect("Failed to start terminal"),
+        position: Position::default(),
+        document
+      }
     }
 }
 
